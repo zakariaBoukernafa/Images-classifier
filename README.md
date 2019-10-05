@@ -104,7 +104,6 @@ Now that the data is ready, it's time to build and train the classifier. As usua
 
 
 ```python
-# TODO: Build and train your network
 model = models.vgg16(pretrained=True)
 model
 ```
@@ -465,7 +464,6 @@ def process_image(image):
         returns an Numpy array
     '''
     
-    # TODO: Process a PIL image for use in a PyTorch model
     pil_image = Image.open(image)
     transformed_image =transforms.Compose([transforms.Resize(224),
                                          transforms.CenterCrop(224),
@@ -537,7 +535,6 @@ def predict(image_path, model, topk=5):
     ''' Predict the class (or classes) of an image using a trained deep learning model.
     '''
     
-    # TODO: Implement the code to predict the class from an image file_
     model.to('cuda')
     image = process_image(image_path)
     image.unsqueeze_(0)
