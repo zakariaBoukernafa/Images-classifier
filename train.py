@@ -10,7 +10,6 @@ from torch import optim
 import torch.nn.functional as F
 from torchvision import datasets, transforms,models
 from PIL import Image
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def main():
@@ -36,7 +35,7 @@ def get_input_args():
     parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate value')
     parser.add_argument('--hidden_units', type=int, nargs='+', default=[4096,1024], help='Hidden units')
     parser.add_argument('--epochs', type=int, default=3, help='Number of epochs')
-    parser.add_argument('--gpu', action="store_true", help='GPU')
+    parser.add_argument('--gpu', default = 'cuda' ,action="store_true", help='GPU')
     args = parser.parse_args()
 
     return args
@@ -117,13 +116,14 @@ def databuilder(args):
     model.classifier = classifier    
     return model
     
-def validation(model, optimizer,testloader, criterion,device='cuda'):
+def validation(model, optimizer,testloader, criterion,args):
     test_loss = 0
     accuracy = 0
+    device=args.gpu
     for images, labels in testloader:
         optimizer.zero_grad()
-        images, labels = images.to('cuda') , labels.to('cuda')
-        model.to('cuda')
+        images, labels = images.to(device) , labels.to(device)
+        model.to(device)
         output = model.forward(images)
         test_loss += criterion(output, labels).item()
         ps = torch.exp(output)
@@ -143,12 +143,13 @@ def train(model,data,args):
   
     steps = 0
     print_every = 40
+    device = args.gpu
     for e in range(epochs):
         running_loss = 0
-        model.to('cuda')
+        model.to(device)
         for ii,(inputs, labels) in enumerate(trainloader):
             steps += 1
-            inputs,labels = inputs.to('cuda'), labels.to('cuda')
+            inputs,labels = inputs.to(device), labels.to(device)
 
             optimizer.zero_grad()
 
@@ -166,7 +167,7 @@ def train(model,data,args):
                 model.eval()
 
                 with torch.no_grad():
-                    test_loss, accuracy = validation(model,optimizer,testloader, criterion,device)
+                    test_loss, accuracy = validation(model,optimizer,testloader, criterion,args)
 
                 print("Epoch: {}/{}.. ".format(e+1, epochs),
                       "Training Loss: {:.3f}.. ".format(running_loss/print_every),
