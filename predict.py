@@ -10,13 +10,12 @@ from torch import optim
 import torch.nn.functional as F
 from torchvision import datasets, transforms,models
 from PIL import Image
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def main():
     args = parse()
     model = load_check_point(args)
     print('model is' , model)
-    prediction = predict(args.input_path,model,args)
+    show_prediction(args.input_path,model,args)
     print('done')
     
     return 
@@ -25,29 +24,29 @@ def main():
 def parse():
     print('start')
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_path',default = './flowers/test/23/image_03382.jpg', help='path to image input')
-    parser.add_argument('--checkpoint',type = str, default='./checkpoint.pth',help = 'checkpoint path')
+    parser.add_argument('input_path',type = str ,default = './flowers/test/23/image_03382.jpg', help='path to image input')
+    parser.add_argument('checkpoint',type = str, default='./checkpoint.pth',help = 'checkpoint path')
     parser.add_argument('--top_k',type=int, default=5, action="store",help= 'number of topk')
-    parser.add_argument('--category_names', default='cat_to_name.json',help = 'category name')
+    parser.add_argument('--category_names',type=str ,default='./cat_to_name.json',help = 'category name')
     parser.add_argument('--gpu',default = 'cuda',action="store_true", help='GPU')
     args = parser.parse_args()
     return args
 
 
 def load_check_point(args):
-    checkpoint = torch.load('./checkpoint.pth')
-    model = nn.Sequential(OrderedDict([
+    checkpoint = torch.load(args.checkpoint)
+    classifier =nn.Sequential(OrderedDict([
                           ('fc1', nn.Linear(checkpoint['input_size'], checkpoint['hidden_layer1'])),
                           ('relu1', nn.ReLU()),
                           ('do1', nn.Dropout(0.5)),
-                          ('fc2', nn.Linear(checkpoint['hidden_layer1'],                                                          checkpoint['hidden_layer2'])),
-                          ('relu2', nn.ReLU()), 
+                          ('fc2', nn.Linear(checkpoint['hidden_layer1'],checkpoint['hidden_layer2'])),                                                            ('relu2', nn.ReLU()), 
                           ('do2', nn.Dropout(0.5)),
                           ('fc3', nn.Linear(checkpoint['hidden_layer2'],checkpoint['output_size'])), 
                           ('output', nn.LogSoftmax(dim=1))
                           ]))
+    model.classifier = classifier
     model.class_to_idx =  checkpoint['index_to_class']
-    model.load_state_dict(checkpoint['state_dict'], strict=False)    
+    model.load_state_dict(checkpoint['state_dict'])
     return model
 def process_image(image):
     
@@ -72,13 +71,29 @@ def predict(image_path, model,args):
     with torch.no_grad():
         output = model.forward(image)
     ps = F.softmax(output,dim=1)
-    print('probabity is',ps.topk(topk))
     return ps.topk(topk)
 
 
-def show_prediction(image_path,model,args):
-    topk= args.topk
+def show_prediction(path,model,args):
+    with open(args.category_names, 'r') as f:
+        cat_to_name = json.load(f)
+    topk= args.top_k
     device = args.gpu
     category_names = args.category_names
+    probs = predict(path, model,args)
+    ps = np.array(probs[0][0])
+    print('probs are ',np.array(probs[0][0]))
+    print('labels are ',np.array(probs[1][0]))
+    locs = [cat_to_name[str(index + 1)] for index in np.array(probs[1][0])]
     
+    for index in range(topk):
+        print('the picture has a probability of {}  to be a  {} '.format(ps[index],locs[index]))
+        
+    return 
+    
+    
+    
+    
+model = models.vgg16(pretrained=True)    
+
 main()        
