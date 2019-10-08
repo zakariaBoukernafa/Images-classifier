@@ -28,7 +28,7 @@ def parse():
     parser.add_argument('checkpoint',type = str, default='./checkpoint.pth',help = 'checkpoint path')
     parser.add_argument('--top_k',type=int, default=5, action="store",help= 'number of topk')
     parser.add_argument('--category_names',type=str ,default='./cat_to_name.json',help = 'category name')
-    parser.add_argument('--gpu',default = 'cuda',action="store_true", help='GPU')
+    parser.add_argument('--gpu',default = 'false',action="store_true", help='GPU')
     args = parser.parse_args()
     return args
 
@@ -36,14 +36,17 @@ def parse():
 def load_check_point(args):
     checkpoint = torch.load(args.checkpoint)
     classifier =nn.Sequential(OrderedDict([
-                          ('fc1', nn.Linear(checkpoint['input_size'], checkpoint['hidden_layer1'])),
+                          ('fc1', nn.Linear(checkpoint['input_size'], checkpoint['hidden_layer'])),
                           ('relu1', nn.ReLU()),
-                          ('do1', nn.Dropout(0.5)),
-                          ('fc2', nn.Linear(checkpoint['hidden_layer1'],checkpoint['hidden_layer2'])),                                                            ('relu2', nn.ReLU()), 
-                          ('do2', nn.Dropout(0.5)),
-                          ('fc3', nn.Linear(checkpoint['hidden_layer2'],checkpoint['output_size'])), 
+                          ('fc2', nn.Linear(checkpoint['hidden_layer'],checkpoint['output_size'])), 
                           ('output', nn.LogSoftmax(dim=1))
                           ]))
+    architecture = checkpoint['architecture']
+    if architecture == 'vgg13':
+        model = models.vgg13(pretrained=True)
+    elif architecture == 'vgg16':
+        model = models.vgg16(pretrained=True)
+    
     model.classifier = classifier
     model.class_to_idx =  checkpoint['index_to_class']
     model.load_state_dict(checkpoint['state_dict'])
@@ -51,21 +54,39 @@ def load_check_point(args):
 def process_image(image):
     
     pil_image = Image.open(image)
-    transformed_image =transforms.Compose([transforms.Resize(224),
-                                         transforms.CenterCrop(224),
-                                         transforms.ToTensor(),
-                                         transforms.Normalize([0.485, 0.456, 0.406], 
-                                                            [0.229, 0.224, 0.225])])
-    return transformed_image(pil_image)
+    width, height = pil_image.size
+    
+    if height > width:
+        height = int(max(height * 256 / width, 1))
+        width = 256
+    else:
+        width = int(max(width * 256 / height, 1))
+        height = 256
+        
+        
+    x0 = (width - 224) / 2
+    y0 = (height - 224) / 2
+    x1 = (width + 224) / 2
+    y1 = (height + 224) / 2  
+    
+    new_size = pil_image.resize((width, height))
+    pil_image = new_size.crop((x0, y0, x1, y1))  
+    np_image = np.array(pil_image)
+    np_image = (np_image - np_image.mean()) / np_image.std()
+    np_image = np_image.transpose(2, 0, 1)
+    
+    
+    return np_image
                         
 
 
 def predict(image_path, model,args):
     
     topk = args.top_k
-    device = args.gpu
+    device = torch.device('cuda' if args.gpu and torch.cuda.is_available() else 'cpu')
     model.to(device)
     image = process_image(image_path)
+    image = torch.from_numpy(image)
     image.unsqueeze_(0)
     image = image.float().to(device)
     with torch.no_grad():
@@ -77,14 +98,15 @@ def predict(image_path, model,args):
 def show_prediction(path,model,args):
     with open(args.category_names, 'r') as f:
         cat_to_name = json.load(f)
+        
     topk= args.top_k
-    device = args.gpu
+    device = torch.device('cuda' if args.gpu and torch.cuda.is_available() else 'cpu')
     category_names = args.category_names
-    probs = predict(path, model,args)
+    
+    probs= predict(path, model,args)
     ps = np.array(probs[0][0])
-    print('probs are ',np.array(probs[0][0]))
-    print('labels are ',np.array(probs[1][0]))
-    locs = [cat_to_name[str(index + 1)] for index in np.array(probs[1][0])]
+    idx_to_class = {val: key for key, val in model.class_to_idx.items()} 
+    locs = [cat_to_name[idx_to_class[idx]] for idx in np.array(probs[1][0])]
     
     for index in range(topk):
         print('the picture has a probability of {}  to be a  {} '.format(ps[index],locs[index]))
@@ -94,6 +116,5 @@ def show_prediction(path,model,args):
     
     
     
-model = models.vgg16(pretrained=True)    
 
 main()        
