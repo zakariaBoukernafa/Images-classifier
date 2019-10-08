@@ -33,56 +33,55 @@ def get_input_args():
     parser.add_argument('--save_dir', default='checkpoint.pth', help='Checkpoint save directory')
     parser.add_argument('--arch', choices=[ 'vgg16','vgg13'], default='vgg16', help='neural network')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='learning rate value')
-    parser.add_argument('--hidden_units', type=int, nargs='+', default=[4096,1024], help='Hidden units')
+    parser.add_argument('--hidden_units', type=int, default=4096, help='Hidden units')
     parser.add_argument('--epochs', type=int, default=3, help='Number of epochs')
-    parser.add_argument('--gpu', default = 'cuda' ,action="store_true", help='GPU')
+    parser.add_argument('--gpu', default = False ,action="store_true", help='GPU')
     args = parser.parse_args()
 
     return args
 
 def get_directory(args):
-    args.data_dir = "./flowers"
-    train_dir = args.data_dir + '/train'
-    valid_dir = args.data_dir + '/valid'
-    test_dir = args.data_dir + '/test'
+    data_dir = args.data_dir
+    train_dir = data_dir + '/train'
+    valid_dir = data_dir + '/valid'
+    test_dir = data_dir + '/test'
     data_directory = [train_dir,test_dir,valid_dir]
     return data_directory
 
 
 def transform_data(data_dir):
-    train_dir, test_dir, valid_dir =  data_dir
-    data_transforms =transforms.Compose([transforms.ToTensor(),
-                                     transforms.Normalize([0.485, 0.456, 0.406], 
-                                                          [0.229, 0.224, 0.225])])
+    train_dir, test_dir, valid_dir = data_dir
+    
 
     #validating 
-    valid_transofrms = transforms.Compose([transforms.Resize(224),
+    valid_transforms = transforms.Compose([transforms.Resize(225),
                                      transforms.CenterCrop(224),
                                      transforms.ToTensor(),
                                      transforms.Normalize([0.485, 0.456, 0.406], 
                                                           [0.229, 0.224, 0.225])])
     #training
-    train_transforms =transforms.Compose([transforms.Resize(255),
-                                             transforms.CenterCrop(224),
+    train_transforms =transforms.Compose([transforms.Resize(225),
+                                             transforms.RandomCrop(224),
                                              transforms.ToTensor(),
                                              transforms.Normalize([0.485, 0.456, 0.406], 
                                                                 [0.229, 0.224, 0.225])])
     #testing
-    test_transforms =transforms.Compose([transforms.Resize(224),
+    test_transforms =transforms.Compose([transforms.Resize(225),
                                              transforms.CenterCrop(224),
                                              transforms.ToTensor(),
                                              transforms.Normalize([0.485, 0.456, 0.406], 
                                                                   [0.229, 0.224, 0.225])])
-    # Load the datasets with ImageFolder
-    valid_datasets = datasets.ImageFolder(valid_dir, transform=data_transforms)
+    # TODO: Load the datasets with ImageFolder
+    valid_datasets = datasets.ImageFolder(valid_dir, transform=valid_transforms)
     train_datasets = datasets.ImageFolder(train_dir, transform=train_transforms)
     test_datasets = datasets.ImageFolder(test_dir, transform=test_transforms)
 
 
-    # Using the image datasets and the trainforms, define the dataloaders
-    validloaders = torch.utils.data.DataLoader(valid_datasets, batch_size=32,shuffle=True)
+    # TODO: Using the image datasets and the trainforms, define the dataloaders
+    validloaders = torch.utils.data.DataLoader(valid_datasets, batch_size=32)
     trainloaders = torch.utils.data.DataLoader(train_datasets, batch_size=64,shuffle=True)
     testloaders = torch.utils.data.DataLoader(test_datasets, batch_size=64)
+    
     with open('cat_to_name.json', 'r') as f:
         cat_to_name = json.load(f)
     loaders_dict = {
@@ -95,22 +94,30 @@ def transform_data(data_dir):
 
 
 def databuilder(args):
-    if (args.arch =='vgg' or args.arch =='vgg13' or args.arch =='vgg16'):
-        model = models.vgg16(pretrained=True) #test it later for models.args.arch 
-        inputs=25088
+    if args.arch=='vgg13':
+        model = models.vgg13(pretrained=True)
+        inputs = 25088
+    elif args.arch == 'vgg16':
+        model = models.vgg16(pretrained=True)
+        inputs = 25088
+
     #freezing
     for param in model.parameters():
         param.requires_grad = False
         
     hidden_units = args.hidden_units
+    data_dir = args.data_dir
+    
+    #calculate the numer of outputs in the training dir
+    list = os.listdir(data_dir+'/train') 
+    number_outputs = len(list)
+
+
+
     classifier = nn.Sequential(OrderedDict([
-                          ('fc1', nn.Linear(inputs, 4096)),
-                          ('relu1', nn.ReLU()),
-                          ('do1', nn.Dropout(0.5)),
-                          ('fc2', nn.Linear(4096, 1024)),
-                          ('relu2', nn.ReLU()), 
-                          ('do2', nn.Dropout(0.5)),
-                          ('fc3', nn.Linear(1024,102)), 
+                          ('fc1', nn.Linear(inputs, hidden_units)),
+                          ('relu', nn.ReLU()),
+                          ('fc2', nn.Linear(hidden_units, number_outputs)),
                           ('output', nn.LogSoftmax(dim=1))
                           ]))
     model.classifier = classifier    
@@ -119,7 +126,7 @@ def databuilder(args):
 def validation(model, optimizer,testloader, criterion,args):
     test_loss = 0
     accuracy = 0
-    device=args.gpu
+    device = torch.device('cuda' if args.gpu and torch.cuda.is_available() else 'cpu')
     for images, labels in testloader:
         optimizer.zero_grad()
         images, labels = images.to(device) , labels.to(device)
@@ -143,7 +150,7 @@ def train(model,data,args):
   
     steps = 0
     print_every = 40
-    device = args.gpu
+    device = torch.device('cuda' if args.gpu and torch.cuda.is_available() else 'cpu')
     for e in range(epochs):
         running_loss = 0
         model.to(device)
@@ -167,12 +174,12 @@ def train(model,data,args):
                 model.eval()
 
                 with torch.no_grad():
-                    test_loss, accuracy = validation(model,optimizer,testloader, criterion,args)
+                    test_loss, accuracy = validation(model,optimizer,validloader, criterion,args)
 
                 print("Epoch: {}/{}.. ".format(e+1, epochs),
                       "Training Loss: {:.3f}.. ".format(running_loss/print_every),
-                      "Test Loss: {:.3f}.. ".format(test_loss/len(testloader)),
-                      "Test Accuracy: {:.3f}".format(accuracy/len(testloader)))
+                      "valid Loss: {:.3f}.. ".format(test_loss/len(validloader)),
+                      "valid Accuracy: {:.3f}".format(accuracy/len(validloader)))
                 running_loss = 0
                 model.train()
     return model
@@ -183,11 +190,15 @@ def save_check_point(model,data,args):
     train_datasets= data['train_datasets']
     model.class_to_idx = train_datasets.class_to_idx
     model.to('cpu')
+    #calculate the numer of outputs in the training dir
+    list = os.listdir(args.data_dir+'/train') 
+    number_outputs = len(list)
+    
     checkpoint = {'input_size': 25088,
-              'output_size': 102,
-              'hidden_layer1':4096,
-              'hidden_layer2':1024,
-              'index_to_class': {i: j for i, j in train_datasets.class_to_idx.items()},
+              'output_size': number_outputs,
+              'hidden_layer':args.hidden_units,
+              'architecture' :args.arch,
+              'index_to_class': model.class_to_idx,
               'state_dict': model.state_dict()}
     torch.save(checkpoint, save_dir)
     return
